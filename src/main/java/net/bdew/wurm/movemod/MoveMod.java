@@ -192,6 +192,11 @@ public class MoveMod implements WurmServerMod, Configurable, Initable, PreInitab
                 );
             }
 
+            CtClass ctVehicle = classPool.getCtClass("com.wurmonline.server.behaviours.Vehicle");
+            ctVehicle.getMethod("calculateNewVehicleSpeed", "(Z)B").insertAfter("if ($_<0) $_=java.lang.Byte.MAX_VALUE;");
+            ctVehicle.getMethod("calculateNewBoatSpeed", "(Z)B").insertAfter("if ($_<0) $_=java.lang.Byte.MAX_VALUE;");
+            ctVehicle.getMethod("calculateNewMountSpeed", "(Lcom/wurmonline/server/creatures/Creature;Z)B").insertAfter("if ($_<0) $_=java.lang.Byte.MAX_VALUE;");
+
             for (Map.Entry<Integer, BdewVehicleOverride> ent : vehicleOverrides.entrySet()) {
                 ModVehicleBehaviours.addItemVehicle(ent.getKey(), ent.getValue());
             }
