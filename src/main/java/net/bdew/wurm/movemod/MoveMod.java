@@ -22,6 +22,7 @@ public class MoveMod implements WurmServerMod, Configurable, Initable, PreInitab
     public static float cantMoveWeight = 7000;
     public static float playerSpeedMultiplier = 1;
     public static boolean enableBoatHitching = false;
+    public static float creatureSpeedMultiplier = 1;
 
     private HashMap<Integer, BdewVehicleOverride> vehicleOverrides = new HashMap<>();
     private HashMap<Integer, BdewVehicleOverride> creatureOverrides = new HashMap<>();
@@ -102,6 +103,9 @@ public class MoveMod implements WurmServerMod, Configurable, Initable, PreInitab
                     case "enableBoatHitching":
                         enableBoatHitching = Boolean.parseBoolean(value);
                         break;
+                    case "creatureSpeedMultiplier":
+                        creatureSpeedMultiplier = Float.parseFloat(value);
+                        break;
                     case "classname":
                     case "classpath":
                     case "sharedClassLoader":
@@ -133,6 +137,7 @@ public class MoveMod implements WurmServerMod, Configurable, Initable, PreInitab
         logInfo("cantMoveWeight = " + cantMoveWeight);
         logInfo("playerSpeedMultiplier = " + playerSpeedMultiplier);
         logInfo("enableBoatHitching = " + enableBoatHitching);
+        logInfo("creatureSpeedMultiplier = " + creatureSpeedMultiplier);
         logInfo(vehicleOverrides.size() + " Vehicle Overrides:");
         for (Map.Entry<Integer, BdewVehicleOverride> vo : vehicleOverrides.entrySet())
             logInfo(String.format("%d -> %s", vo.getKey(), vo.getValue().infoString()));
@@ -174,6 +179,7 @@ public class MoveMod implements WurmServerMod, Configurable, Initable, PreInitab
                     "       return 0;" +
                     "   }" +
                     "}");
+            ctCreature.getMethod("getMoveModifier", "(I)F").insertAfter("if (!isPlayer()) $_ = $_ * " + creatureSpeedMultiplier + ";");
 
             if (enableBoatHitching) {
                 // Fix boat when hitching animals
