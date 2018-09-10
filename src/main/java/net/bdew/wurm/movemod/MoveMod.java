@@ -23,6 +23,7 @@ public class MoveMod implements WurmServerMod, Configurable, Initable, PreInitab
     public static float playerSpeedMultiplier = 1;
     public static boolean enableBoatHitching = false;
     public static float creatureSpeedMultiplier = 1;
+    public static float boatGlobalMultiplier, boatSeaGodBonus;
 
     private HashMap<Integer, BdewVehicleOverride> vehicleOverrides = new HashMap<>();
     private HashMap<Integer, BdewVehicleOverride> creatureOverrides = new HashMap<>();
@@ -106,6 +107,12 @@ public class MoveMod implements WurmServerMod, Configurable, Initable, PreInitab
                     case "creatureSpeedMultiplier":
                         creatureSpeedMultiplier = Float.parseFloat(value);
                         break;
+                    case "boatGlobalMultiplier":
+                        boatGlobalMultiplier = Float.parseFloat(value);
+                        break;
+                    case "boatSeaGodBonus":
+                        boatSeaGodBonus = Float.parseFloat(value);
+                        break;
                     case "classname":
                     case "classpath":
                     case "sharedClassLoader":
@@ -138,6 +145,8 @@ public class MoveMod implements WurmServerMod, Configurable, Initable, PreInitab
         logInfo("playerSpeedMultiplier = " + playerSpeedMultiplier);
         logInfo("enableBoatHitching = " + enableBoatHitching);
         logInfo("creatureSpeedMultiplier = " + creatureSpeedMultiplier);
+        logInfo("boatGlobalMultiplier = " + boatGlobalMultiplier);
+        logInfo("boatSeaGodBonus = " + boatSeaGodBonus);
         logInfo(vehicleOverrides.size() + " Vehicle Overrides:");
         for (Map.Entry<Integer, BdewVehicleOverride> vo : vehicleOverrides.entrySet())
             logInfo(String.format("%d -> %s", vo.getKey(), vo.getValue().infoString()));
@@ -210,6 +219,10 @@ public class MoveMod implements WurmServerMod, Configurable, Initable, PreInitab
             for (Map.Entry<Integer, BdewVehicleOverride> ent : creatureOverrides.entrySet()) {
                 ModVehicleBehaviours.addCreatureVehicle(ent.getKey(), ent.getValue());
             }
+
+            classPool.getCtClass("com.wurmonline.server.creatures.MovementScheme")
+                    .getMethod("addMountSpeed", "(S)Z")
+                    .insertBefore("$1 = net.bdew.wurm.movemod.Hooks.modMountSpeed(creature, $1);");
 
         } catch (Throwable e) {
             logException("Error loading mod", e);
