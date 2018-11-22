@@ -1,8 +1,11 @@
 package net.bdew.wurm.movemod;
 
 import com.wurmonline.server.behaviours.BdewVehicleOverride;
+import javassist.CannotCompileException;
 import javassist.ClassPool;
 import javassist.CtClass;
+import javassist.expr.ExprEditor;
+import javassist.expr.MethodCall;
 import org.gotti.wurmunlimited.modloader.classhooks.HookManager;
 import org.gotti.wurmunlimited.modloader.interfaces.*;
 import org.gotti.wurmunlimited.modsupport.vehicles.ModVehicleBehaviours;
@@ -23,7 +26,11 @@ public class MoveMod implements WurmServerMod, Configurable, Initable, PreInitab
     public static float playerSpeedMultiplier = 1;
     public static boolean enableBoatHitching = false;
     public static float creatureSpeedMultiplier = 1;
-    public static float boatGlobalMultiplier, boatSeaGodBonus;
+    public static float boatGlobalMultiplier = 1, boatSeaGodBonus = 1;
+    public static boolean fixSpeedTraitDelay;
+    public static float horseStrengthMultiplier = 1f;
+    public static float unicornStrengthMultiplier = 1f;
+    public static float weightTraitsMultiplier = 1f;
 
     private HashMap<Integer, BdewVehicleOverride> vehicleOverrides = new HashMap<>();
     private HashMap<Integer, BdewVehicleOverride> creatureOverrides = new HashMap<>();
@@ -112,6 +119,18 @@ public class MoveMod implements WurmServerMod, Configurable, Initable, PreInitab
                         break;
                     case "boatSeaGodBonus":
                         boatSeaGodBonus = Float.parseFloat(value);
+                        break;
+                    case "fixSpeedTraitDelay":
+                        fixSpeedTraitDelay = Boolean.parseBoolean(value);
+                        break;
+                    case "horseStrengthMultiplier":
+                        horseStrengthMultiplier = Float.parseFloat(value);
+                        break;
+                    case "unicornStrengthMultiplier":
+                        unicornStrengthMultiplier = Float.parseFloat(value);
+                        break;
+                    case "weightTraitsMultiplier":
+                        weightTraitsMultiplier = Float.parseFloat(value);
                         break;
                     case "classname":
                     case "classpath":
@@ -207,10 +226,43 @@ public class MoveMod implements WurmServerMod, Configurable, Initable, PreInitab
                 );
             }
 
+            // Prevent overflows in speed
             CtClass ctVehicle = classPool.getCtClass("com.wurmonline.server.behaviours.Vehicle");
             ctVehicle.getMethod("calculateNewVehicleSpeed", "(Z)B").insertAfter("if ($_<0) $_=java.lang.Byte.MAX_VALUE;");
             ctVehicle.getMethod("calculateNewBoatSpeed", "(Z)B").insertAfter("if ($_<0) $_=java.lang.Byte.MAX_VALUE;");
             ctVehicle.getMethod("calculateNewMountSpeed", "(Lcom/wurmonline/server/creatures/Creature;Z)B").insertAfter("if ($_<0) $_=java.lang.Byte.MAX_VALUE;");
+
+            // Apply boat speed multiplier
+            classPool.getCtClass("com.wurmonline.server.creatures.MovementScheme")
+                    .getMethod("addMountSpeed", "(S)Z")
+                    .insertBefore("$1 = net.bdew.wurm.movemod.Hooks.modMountSpeed(creature, $1);");
+
+            if (fixSpeedTraitDelay) {
+                // Fix initial delay on speed trait activation
+                ctCreature.getMethod("getMountSpeedPercent", "(Z)F").instrument(new ExprEditor() {
+                    @Override
+                    public void edit(MethodCall m) throws CannotCompileException {
+                        if (m.getMethodName().equals("getTraitMovePercent"))
+                            m.replace("$_=$proceed(false);");
+                    }
+                });
+            }
+
+            // Weight adjustments
+            ctCreature.getMethod("getTraitMovePercent", "(Z)F").instrument(new ExprEditor() {
+                private boolean first = true;
+
+                @Override
+                public void edit(MethodCall m) throws CannotCompileException {
+                    if (m.getMethodName().equals("getStrengthSkill")) {
+                        if (first)
+                            m.replace("wmod = wmod * net.bdew.wurm.movemod.MoveMod.weightTraitsMultiplier; $_ = $proceed() * (this.isUnicorn()?net.bdew.wurm.movemod.MoveMod.unicornStrengthMultiplier:net.bdew.wurm.movemod.MoveMod.horseStrengthMultiplier);");
+                        else
+                            m.replace("$_ = $proceed() * (this.isUnicorn()?net.bdew.wurm.movemod.MoveMod.unicornStrengthMultiplier:net.bdew.wurm.movemod.MoveMod.horseStrengthMultiplier);");
+                        first = false;
+                    }
+                }
+            });
 
             for (Map.Entry<Integer, BdewVehicleOverride> ent : vehicleOverrides.entrySet()) {
                 ModVehicleBehaviours.addItemVehicle(ent.getKey(), ent.getValue());
@@ -219,10 +271,6 @@ public class MoveMod implements WurmServerMod, Configurable, Initable, PreInitab
             for (Map.Entry<Integer, BdewVehicleOverride> ent : creatureOverrides.entrySet()) {
                 ModVehicleBehaviours.addCreatureVehicle(ent.getKey(), ent.getValue());
             }
-
-            classPool.getCtClass("com.wurmonline.server.creatures.MovementScheme")
-                    .getMethod("addMountSpeed", "(S)Z")
-                    .insertBefore("$1 = net.bdew.wurm.movemod.Hooks.modMountSpeed(creature, $1);");
 
         } catch (Throwable e) {
             logException("Error loading mod", e);
