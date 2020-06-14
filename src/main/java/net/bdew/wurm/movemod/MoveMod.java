@@ -24,6 +24,7 @@ public class MoveMod implements WurmServerMod, Configurable, Initable, PreInitab
     public static float encumberedWeight = 3500;
     public static float cantMoveWeight = 7000;
     public static float playerSpeedMultiplier = 1;
+    public static float gmSpeedMultiplier = 1;
     public static boolean enableBoatHitching = false;
     public static float creatureSpeedMultiplier = 1;
     public static float boatGlobalMultiplier = 1, boatSeaGodBonus = 1;
@@ -108,6 +109,9 @@ public class MoveMod implements WurmServerMod, Configurable, Initable, PreInitab
                     case "playerSpeedMultiplier":
                         playerSpeedMultiplier = Float.parseFloat(value);
                         break;
+                    case "gmSpeedMultiplier":
+                        gmSpeedMultiplier = Float.parseFloat(value);
+                        break;
                     case "enableBoatHitching":
                         enableBoatHitching = Boolean.parseBoolean(value);
                         break;
@@ -162,6 +166,7 @@ public class MoveMod implements WurmServerMod, Configurable, Initable, PreInitab
         logInfo("encumberedWeight = " + encumberedWeight);
         logInfo("cantMoveWeight = " + cantMoveWeight);
         logInfo("playerSpeedMultiplier = " + playerSpeedMultiplier);
+        logInfo("gmSpeedMultiplier = " + gmSpeedMultiplier);
         logInfo("enableBoatHitching = " + enableBoatHitching);
         logInfo("creatureSpeedMultiplier = " + creatureSpeedMultiplier);
         logInfo("boatGlobalMultiplier = " + boatGlobalMultiplier);
@@ -179,21 +184,35 @@ public class MoveMod implements WurmServerMod, Configurable, Initable, PreInitab
         try {
             ClassPool classPool = HookManager.getInstance().getClassPool();
 
-            if (playerSpeedMultiplier != 1) {
-                // Tweak base player speed
-                CtClass ctMovementScheme = classPool.getCtClass("com.wurmonline.server.creatures.MovementScheme");
+            CtClass ctMovementScheme = classPool.getCtClass("com.wurmonline.server.creatures.MovementScheme");
+
+            if (playerSpeedMultiplier != 1 || gmSpeedMultiplier != 1) {
+                // Tweak base player / GM speed
                 ctMovementScheme.getMethod("getSpeedModifier", "()F").insertAfter("if ($_>0 && this.creature.isPlayer()) {" +
-                        "   $_ = $_ * " + playerSpeedMultiplier + ";" +
+                        "   $_ = $_ * (this.creature.getPower()>0 ? " + gmSpeedMultiplier + " : " + playerSpeedMultiplier + ");" +
                         "};");
             }
+
+            ctMovementScheme.getMethod("move", "(FFF)V").instrument(new ExprEditor() {
+                @Override
+                public void edit(MethodCall m) throws CannotCompileException {
+                    if (m.getMethodName().equals("modifyStamina")) {
+                        m.replace("if (this.creature.getPower()<=0) $proceed($$);");
+                    }
+                }
+            });
 
             // Buff carry weight limits
             CtClass ctCreature = classPool.getCtClass("com.wurmonline.server.creatures.Creature");
             ctCreature.getMethod("setMoveLimits", "()V").insertAfter(
                     "       com.wurmonline.server.skills.Skill strength = this.skills.getSkill(102);" +
-                            "this.moveslow = (int)strength.getKnowledge(0.0) * " + slowWeight + ";" +
-                            "this.encumbered = (int)strength.getKnowledge(0.0) * " + encumberedWeight + ";" +
-                            "this.cantmove = (int)strength.getKnowledge(0.0) * " + cantMoveWeight + ";"
+                            "if (this.getPower()>0) {" +
+                            "   this.moveslow = this.encumbered = this.cantmove = 2147483647;" +
+                            "} else {" +
+                            "   this.moveslow = (int)strength.getKnowledge(0.0) * " + slowWeight + ";" +
+                            "   this.encumbered = (int)strength.getKnowledge(0.0) * " + encumberedWeight + ";" +
+                            "   this.cantmove = (int)strength.getKnowledge(0.0) * " + cantMoveWeight + ";" +
+                            "}"
             );
 
             // Use correct carry capacity
@@ -201,6 +220,7 @@ public class MoveMod implements WurmServerMod, Configurable, Initable, PreInitab
             ctCreature.getMethod("getCarryCapacityFor", "(I)I").setBody("{ return (int) getCarryingCapacityLeft() / $1; }");
             ctCreature.getMethod("getCarryingCapacityLeft", "()I").setBody("{ " +
                     "   try {" +
+                    "       if (this.getPower()>0) return 2147483647 - this.carriedWeight;" +
                     "       return (int)this.skills.getSkill(102).getKnowledge(0.0) * " + (int) weightLimit + " - this.carriedWeight;" +
                     "   } catch (com.wurmonline.server.skills.NoSuchSkillException nss) {" +
                     "       logger.log(java.util.logging.Level.WARNING, \"No strength skill for \" + this, (java.lang.Throwable)nss);" +
